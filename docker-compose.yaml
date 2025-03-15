@@ -1,0 +1,129 @@
+version: '3'
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=mysql+mysqldb://airflow:airflow@mysql-airflow/airflow
+    - AIRFLOW__CORE__FERNET_KEY='FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM='
+    - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+    - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+    #- AIRFLOW_CONN_POSTGRES_TW=postgres://postgres:postgres@postgres:5432/mydb
+
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./requirements.txt:/opt/airflow/requirements.txt
+  depends_on:
+    - mysql-airflow
+  links:
+    - mysql-airflow
+    - minio
+
+services:
+  # MySQL database for Airflow
+  mysql-airflow:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=airflow
+      - MYSQL_USER=airflow
+      - MYSQL_PASSWORD=airflow
+      - MYSQL_DATABASE=airflow
+    volumes:
+      - mysql-airflow-volume:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "airflow", "-pairflow"]
+      interval: 5s
+      retries: 5
+    restart: always
+    ports:
+      - "3306:3306"
+
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=mydb
+    volumes:
+      - postgres-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 5
+    restart: always
+    ports:
+      - "5432:5432"
+
+  minio:
+    image: minio/minio:RELEASE.2023-09-30T07-02-29Z
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: always
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+        pip install -r /opt/airflow/requirements.txt
+        airflow db init
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password admin
+        airflow variables set MINIO_ROOT_USER minioadmin
+        airflow variables set MINIO_ROOT_PASSWORD minioadmin
+        airflow connections add 'postgres_tw' \
+                --conn-type 'postgres' \
+                --conn-host 'postgres' \
+                --conn-schema 'mydb' \
+                --conn-login 'postgres' \
+                --conn-password 'postgres' \
+                --conn-port '5432'
+    restart: on-failure
+
+volumes:
+  mysql-airflow-volume:
+  postgres-volume:
+  minio-data:

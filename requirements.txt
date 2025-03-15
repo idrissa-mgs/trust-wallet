@@ -1,0 +1,5 @@
+apache-airflow
+apache-airflow-providers-postgres
+s3fs
+minio
+
