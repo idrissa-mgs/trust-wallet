@@ -1,4 +1,4 @@
-# Trust Wallet Technical Assignment
+# A simple data pipeline worfklow
 
 ### Project Architecture
 The project is based on theses components:
