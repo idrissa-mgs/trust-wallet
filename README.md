@@ -35,5 +35,3 @@ psql -h localhost -U postgres -d mydb
 - Using spark as procesing engine: For big data, we could use spark and use better storage format like table format for example.
 - For analytics we could use an OLAP database like redshift or clickhouse.
 
-### Author
-Idrissa Magassa
